@@ -83,6 +83,19 @@ struct ContentView<Manager: BLEManagerProtocol>: View {
                 // LED control (only shown when connected)
                 if bleManager.isConnected {
                     VStack(spacing: 20) {
+                        // Battery indicator
+                        HStack {
+                            Image(systemName: "battery.100")
+                                .foregroundColor(.green)
+                            Text("\(bleManager.batteryVoltage)V")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color.green.opacity(0.1))
+                        .cornerRadius(10)
+
                         Image(systemName: bleManager.ledState ? "lightbulb.fill" : "lightbulb")
                             .resizable()
                             .scaledToFit()
@@ -131,8 +144,8 @@ struct ContentView<Manager: BLEManagerProtocol>: View {
             }
             .background(.red)
             .padding()
-            .navigationTitle("skibidi toilet 67")
         }
+        .ignoresSafeArea()
     }
 }
 

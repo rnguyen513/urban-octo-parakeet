@@ -8,6 +8,7 @@ protocol BLEManagerProtocol: ObservableObject {
     var discoveredPeripherals: [CBPeripheral] { get set }
     var statusMessage: String { get set }
     var ledState: Bool { get set }
+    var batteryVoltage: String { get set }
 
     func startScanning()
     func stopScanning()
@@ -20,6 +21,7 @@ class BLEManager: NSObject, BLEManagerProtocol, ObservableObject {
     // BLE UUIDs matching ESP32
     private let serviceUUID = CBUUID(string: "4fafc201-1fb5-459e-8fcc-c5c9c331914b")
     private let characteristicUUID = CBUUID(string: "beb5483e-36e1-4688-b7f5-ea07361b26a8")
+    private let batteryCharacteristicUUID = CBUUID(string: "a1b2c3d4-5678-90ab-cdef-1234567890ab")
 
     // Published properties for UI updates
     @Published var isScanning = false
@@ -27,11 +29,13 @@ class BLEManager: NSObject, BLEManagerProtocol, ObservableObject {
     @Published var discoveredPeripherals: [CBPeripheral] = []
     @Published var statusMessage = "Ready to scan"
     @Published var ledState = false
+    @Published var batteryVoltage = "--"
 
     // Core Bluetooth objects
     private var centralManager: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
     private var ledCharacteristic: CBCharacteristic?
+    private var batteryCharacteristic: CBCharacteristic?
 
     override init() {
         super.init()
@@ -129,8 +133,10 @@ extension BLEManager: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         isConnected = false
         ledCharacteristic = nil
+        batteryCharacteristic = nil
         connectedPeripheral = nil
         ledState = false
+        batteryVoltage = "--"
         statusMessage = "Disconnected"
     }
 
@@ -147,7 +153,7 @@ extension BLEManager: CBPeripheralDelegate {
 
         for service in services {
             if service.uuid == serviceUUID {
-                peripheral.discoverCharacteristics([characteristicUUID], for: service)
+                peripheral.discoverCharacteristics([characteristicUUID, batteryCharacteristicUUID], for: service)
             }
         }
     }
@@ -159,6 +165,12 @@ extension BLEManager: CBPeripheralDelegate {
             if characteristic.uuid == characteristicUUID {
                 ledCharacteristic = characteristic
                 statusMessage = "Ready to control LED"
+            } else if characteristic.uuid == batteryCharacteristicUUID {
+                batteryCharacteristic = characteristic
+                // Enable notifications for battery updates
+                peripheral.setNotifyValue(true, for: characteristic)
+                // Read initial battery value
+                peripheral.readValue(for: characteristic)
             }
         }
     }
@@ -166,6 +178,19 @@ extension BLEManager: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
         if let error = error {
             statusMessage = "Write error: \(error.localizedDescription)"
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        if let error = error {
+            print("Error reading characteristic: \(error.localizedDescription)")
+            return
+        }
+
+        if characteristic.uuid == batteryCharacteristicUUID {
+            if let data = characteristic.value, let voltageString = String(data: data, encoding: .utf8) {
+                batteryVoltage = voltageString
+            }
         }
     }
 }
@@ -177,6 +202,7 @@ class MockBLEManager: BLEManagerProtocol, ObservableObject {
     @Published var discoveredPeripherals: [CBPeripheral] = []
     @Published var statusMessage = "Preview Mode - Ready to scan"
     @Published var ledState = false
+    @Published var batteryVoltage = "3.87"
 
     init(simulatedState: SimulatedState = .disconnected) {
         // Set up initial state based on simulation mode
@@ -184,12 +210,15 @@ class MockBLEManager: BLEManagerProtocol, ObservableObject {
         case .disconnected:
             isConnected = false
             statusMessage = "Preview Mode - Ready to scan"
+            batteryVoltage = "--"
         case .scanning:
             isScanning = true
             statusMessage = "Preview Mode - Scanning..."
+            batteryVoltage = "--"
         case .connected:
             isConnected = true
             statusMessage = "Preview Mode - Connected to SKIBIDI-led"
+            batteryVoltage = "3.87"
         }
     }
 
@@ -228,6 +257,7 @@ class MockBLEManager: BLEManagerProtocol, ObservableObject {
     func disconnect() {
         isConnected = false
         ledState = false
+        batteryVoltage = "--"
         statusMessage = "Preview Mode - Disconnected"
     }
 
