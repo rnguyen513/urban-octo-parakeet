@@ -16,6 +16,7 @@ protocol BLEManagerProtocol: ObservableObject {
     func connect(to peripheral: CBPeripheral)
     func disconnect()
     func setLEDState(_ state: Bool)
+    func rotateStepper(degrees: UInt16, clockwise: Bool)
 }
 
 // Helper function to convert 1S LiPo voltage to percentage
@@ -42,6 +43,7 @@ class BLEManager: NSObject, BLEManagerProtocol, ObservableObject {
     private let serviceUUID = CBUUID(string: "4fafc201-1fb5-459e-8fcc-c5c9c331914b")
     private let characteristicUUID = CBUUID(string: "beb5483e-36e1-4688-b7f5-ea07361b26a8")
     private let batteryCharacteristicUUID = CBUUID(string: "a1b2c3d4-5678-90ab-cdef-1234567890ab")
+    private let stepperCharacteristicUUID = CBUUID(string: "c1d2e3f4-5678-90ab-cdef-1234567890cd")
 
     // Published properties for UI updates
     @Published var isScanning = false
@@ -64,6 +66,7 @@ class BLEManager: NSObject, BLEManagerProtocol, ObservableObject {
     private var connectedPeripheral: CBPeripheral?
     private var ledCharacteristic: CBCharacteristic?
     private var batteryCharacteristic: CBCharacteristic?
+    private var stepperCharacteristic: CBCharacteristic?
 
     override init() {
         super.init()
@@ -125,6 +128,27 @@ class BLEManager: NSObject, BLEManagerProtocol, ObservableObject {
         ledState = state
         statusMessage = "LED turned \(state ? "ON" : "OFF")"
     }
+
+    // Send stepper rotation command to ESP32
+    func rotateStepper(degrees: UInt16, clockwise: Bool) {
+        guard let characteristic = stepperCharacteristic,
+              let peripheral = connectedPeripheral else {
+            statusMessage = "Not connected to device"
+            return
+        }
+
+        // Format: 3 bytes
+        // Byte 0-1: degrees (uint16_t, little-endian)
+        // Byte 2: direction (1 = CW, 0 = CCW)
+        let degreesLSB = UInt8(degrees & 0xFF)
+        let degreesMSB = UInt8((degrees >> 8) & 0xFF)
+        let direction: UInt8 = clockwise ? 1 : 0
+
+        let data = Data([degreesLSB, degreesMSB, direction])
+        peripheral.writeValue(data, for: characteristic, type: .withResponse)
+
+        statusMessage = "Rotating \(degrees)° \(clockwise ? "CW" : "CCW")"
+    }
 }
 
 // MARK: - CBCentralManagerDelegate
@@ -162,6 +186,7 @@ extension BLEManager: CBCentralManagerDelegate {
         isConnected = false
         ledCharacteristic = nil
         batteryCharacteristic = nil
+        stepperCharacteristic = nil
         connectedPeripheral = nil
         ledState = false
         batteryVoltage = "--"
@@ -181,7 +206,7 @@ extension BLEManager: CBPeripheralDelegate {
 
         for service in services {
             if service.uuid == serviceUUID {
-                peripheral.discoverCharacteristics([characteristicUUID, batteryCharacteristicUUID], for: service)
+                peripheral.discoverCharacteristics([characteristicUUID, batteryCharacteristicUUID, stepperCharacteristicUUID], for: service)
             }
         }
     }
@@ -192,14 +217,20 @@ extension BLEManager: CBPeripheralDelegate {
         for characteristic in characteristics {
             if characteristic.uuid == characteristicUUID {
                 ledCharacteristic = characteristic
-                statusMessage = "Ready to control LED"
             } else if characteristic.uuid == batteryCharacteristicUUID {
                 batteryCharacteristic = characteristic
                 // Enable notifications for battery updates
                 peripheral.setNotifyValue(true, for: characteristic)
                 // Read initial battery value
                 peripheral.readValue(for: characteristic)
+            } else if characteristic.uuid == stepperCharacteristicUUID {
+                stepperCharacteristic = characteristic
             }
+        }
+
+        // Update status when all characteristics are discovered
+        if ledCharacteristic != nil && stepperCharacteristic != nil {
+            statusMessage = "Ready to control"
         }
     }
 
@@ -300,5 +331,9 @@ class MockBLEManager: BLEManagerProtocol, ObservableObject {
     func setLEDState(_ state: Bool) {
         ledState = state
         statusMessage = "Preview Mode - LED turned \(state ? "ON" : "OFF")"
+    }
+
+    func rotateStepper(degrees: UInt16, clockwise: Bool) {
+        statusMessage = "Preview Mode - Rotating \(degrees)° \(clockwise ? "CW" : "CCW")"
     }
 }

@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ContentView<Manager: BLEManagerProtocol>: View {
     @ObservedObject var bleManager: Manager
+    @State private var rotationDegrees: Double = 90
+    @State private var selectedDirection: Bool = true  // true = CW, false = CCW
 
     var body: some View {
         NavigationView {
@@ -129,6 +131,87 @@ struct ContentView<Manager: BLEManagerProtocol>: View {
                         .padding()
                         .background(Color.gray.opacity(0.1))
                         .cornerRadius(10)
+
+                        // Stepper motor control section
+                        VStack(spacing: 15) {
+                            Text("Stepper Motor")
+                                .font(.title2)
+                                .fontWeight(.bold)
+
+                            // Degree slider
+                            VStack(spacing: 8) {
+                                HStack {
+                                    Text("Rotation:")
+                                        .font(.headline)
+                                    Spacer()
+                                    Text("\(Int(rotationDegrees))°")
+                                        .font(.headline)
+                                        .foregroundColor(.blue)
+                                }
+
+                                Slider(value: $rotationDegrees, in: 0...360, step: 1)
+                                    .accentColor(.blue)
+                            }
+                            .padding()
+                            .background(Color.gray.opacity(0.1))
+                            .cornerRadius(10)
+
+                            // Quick preset buttons
+                            HStack(spacing: 10) {
+                                ForEach([45, 90, 180, 360], id: \.self) { degree in
+                                    Button(action: {
+                                        rotationDegrees = Double(degree)
+                                    }) {
+                                        Text("\(degree)°")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 8)
+                                            .background(Color.blue.opacity(0.8))
+                                            .cornerRadius(8)
+                                    }
+                                }
+                            }
+
+                            // Direction buttons
+                            HStack(spacing: 15) {
+                                Button(action: {
+                                    bleManager.rotateStepper(degrees: UInt16(rotationDegrees), clockwise: false)
+                                }) {
+                                    HStack {
+                                        Image(systemName: "arrow.counterclockwise.circle.fill")
+                                            .font(.system(size: 24))
+                                        Text("CCW")
+                                            .font(.headline)
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(Color.orange)
+                                    .cornerRadius(10)
+                                }
+
+                                Button(action: {
+                                    bleManager.rotateStepper(degrees: UInt16(rotationDegrees), clockwise: true)
+                                }) {
+                                    HStack {
+                                        Image(systemName: "arrow.clockwise.circle.fill")
+                                            .font(.system(size: 24))
+                                        Text("CW")
+                                            .font(.headline)
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(Color.blue)
+                                    .cornerRadius(10)
+                                }
+                            }
+                        }
+                        .padding()
+                        .background(Color.gray.opacity(0.05))
+                        .cornerRadius(15)
 
                         Button(action: {
                             bleManager.disconnect()
