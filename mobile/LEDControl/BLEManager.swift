@@ -9,12 +9,32 @@ protocol BLEManagerProtocol: ObservableObject {
     var statusMessage: String { get set }
     var ledState: Bool { get set }
     var batteryVoltage: String { get set }
+    var batteryPercentage: Int { get }
 
     func startScanning()
     func stopScanning()
     func connect(to peripheral: CBPeripheral)
     func disconnect()
     func setLEDState(_ state: Bool)
+}
+
+// Helper function to convert 1S LiPo voltage to percentage
+func voltageToPercentage(_ voltage: Double) -> Int {
+    // 1S LiPo voltage ranges:
+    // 4.2V = 100% (fully charged)
+    // 3.7V = 50% (nominal)
+    // 3.0V = 0% (discharged, protection cutoff)
+
+    let minVoltage = 3.0
+    let maxVoltage = 4.2
+
+    // Clamp voltage to valid range
+    let clampedVoltage = min(max(voltage, minVoltage), maxVoltage)
+
+    // Linear interpolation
+    let percentage = ((clampedVoltage - minVoltage) / (maxVoltage - minVoltage)) * 100.0
+
+    return Int(round(percentage))
 }
 
 class BLEManager: NSObject, BLEManagerProtocol, ObservableObject {
@@ -30,6 +50,14 @@ class BLEManager: NSObject, BLEManagerProtocol, ObservableObject {
     @Published var statusMessage = "Ready to scan"
     @Published var ledState = false
     @Published var batteryVoltage = "--"
+
+    // Computed property for battery percentage
+    var batteryPercentage: Int {
+        if let voltage = Double(batteryVoltage) {
+            return voltageToPercentage(voltage)
+        }
+        return 0
+    }
 
     // Core Bluetooth objects
     private var centralManager: CBCentralManager!
@@ -204,7 +232,15 @@ class MockBLEManager: BLEManagerProtocol, ObservableObject {
     @Published var ledState = false
     @Published var batteryVoltage = "3.87"
 
-    init(simulatedState: SimulatedState = .disconnected) {
+    // Computed property for battery percentage
+    var batteryPercentage: Int {
+        if let voltage = Double(batteryVoltage) {
+            return voltageToPercentage(voltage)
+        }
+        return 0
+    }
+
+    init(simulatedState: SimulatedState = .disconnected, simulatedVoltage: String? = nil) {
         // Set up initial state based on simulation mode
         switch simulatedState {
         case .disconnected:
@@ -217,8 +253,8 @@ class MockBLEManager: BLEManagerProtocol, ObservableObject {
             batteryVoltage = "--"
         case .connected:
             isConnected = true
-            statusMessage = "Preview Mode - Connected to SKIBIDI-led"
-            batteryVoltage = "3.87"
+            statusMessage = "Preview Mode - Connected to ad99df9"
+            batteryVoltage = simulatedVoltage ?? "3.87"
         }
     }
 

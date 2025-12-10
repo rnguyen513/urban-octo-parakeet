@@ -84,16 +84,25 @@ struct ContentView<Manager: BLEManagerProtocol>: View {
                 if bleManager.isConnected {
                     VStack(spacing: 20) {
                         // Battery indicator
-                        HStack {
-                            Image(systemName: "battery.100")
-                                .foregroundColor(.green)
-                            Text("\(bleManager.batteryVoltage)V")
-                                .font(.headline)
-                                .fontWeight(.semibold)
+                        VStack(spacing: 10) {
+                            HStack(spacing: 15) {
+                                Image(systemName: batteryIcon(for: bleManager.batteryPercentage))
+                                    .font(.system(size: 30))
+                                    .foregroundColor(batteryColor(for: bleManager.batteryPercentage))
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("\(bleManager.batteryPercentage)%")
+                                        .font(.title2)
+                                        .fontWeight(.bold)
+                                    Text("\(bleManager.batteryVoltage)V")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
                         }
                         .padding()
                         .frame(maxWidth: .infinity)
-                        .background(Color.green.opacity(0.1))
+                        .background(batteryColor(for: bleManager.batteryPercentage).opacity(0.1))
                         .cornerRadius(10)
 
                         Image(systemName: bleManager.ledState ? "lightbulb.fill" : "lightbulb")
@@ -147,6 +156,34 @@ struct ContentView<Manager: BLEManagerProtocol>: View {
         }
         .ignoresSafeArea()
     }
+
+    // Helper function to get appropriate battery icon
+    private func batteryIcon(for percentage: Int) -> String {
+        switch percentage {
+        case 75...100:
+            return "battery.100"
+        case 50..<75:
+            return "battery.75"
+        case 25..<50:
+            return "battery.50"
+        case 1..<25:
+            return "battery.25"
+        default:
+            return "battery.0"
+        }
+    }
+
+    // Helper function to get battery color
+    private func batteryColor(for percentage: Int) -> Color {
+        switch percentage {
+        case 50...100:
+            return .green
+        case 20..<50:
+            return .orange
+        default:
+            return .red
+        }
+    }
 }
 
 struct ContentView_Previews: PreviewProvider {
@@ -160,9 +197,17 @@ struct ContentView_Previews: PreviewProvider {
             ContentView(bleManager: MockBLEManager(simulatedState: .scanning))
                 .previewDisplayName("Scanning")
 
-            // Preview: Connected state
-            ContentView(bleManager: MockBLEManager(simulatedState: .connected))
-                .previewDisplayName("Connected")
+            // Preview: Connected - Full battery (4.2V = 100%)
+            ContentView(bleManager: MockBLEManager(simulatedState: .connected, simulatedVoltage: "4.20"))
+                .previewDisplayName("Connected - Full")
+
+            // Preview: Connected - Medium battery (3.7V = 58%)
+            ContentView(bleManager: MockBLEManager(simulatedState: .connected, simulatedVoltage: "3.70"))
+                .previewDisplayName("Connected - Medium")
+
+            // Preview: Connected - Low battery (3.3V = 25%)
+            ContentView(bleManager: MockBLEManager(simulatedState: .connected, simulatedVoltage: "3.30"))
+                .previewDisplayName("Connected - Low")
         }
     }
 }

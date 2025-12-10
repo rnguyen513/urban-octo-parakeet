@@ -11,7 +11,8 @@
 // Built-in LED pin for XIAO ESP32C6
 #define LED_PIN 15
 
-// Battery monitoring - A0 has built-in voltage divider (2:1) for LiPo battery
+// Battery monitoring - External 200k+200k voltage divider (2:1) for LiPo battery
+// A0 pin connected to voltage divider midpoint
 #define BATTERY_UPDATE_INTERVAL 5000  // Update battery level every 5 seconds
 
 BLEServer* pServer = NULL;
@@ -62,6 +63,9 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
 
+  // Initialize ADC pin for battery monitoring
+  pinMode(A0, INPUT);
+
   // Create the BLE Device
   BLEDevice::init("ad99df9");
 
@@ -109,17 +113,15 @@ void setup() {
 }
 
 float readBatteryVoltage() {
-  // Take multiple readings and average for accuracy
-  int total = 0;
+  // Take multiple readings and average for accuracy (removes spike errors)
+  uint32_t Vbatt = 0;
   for(int i = 0; i < 16; i++) {
-    total += analogRead(A0);
-    delay(2);
+    Vbatt = Vbatt + analogReadMilliVolts(A0); // ADC with factory calibration
   }
 
-  // Calculate voltage: ADC reading -> voltage with 2:1 divider compensation
-  // ESP32-C6 ADC: 12-bit (0-4095), reference voltage 3.3V
-  float voltage = 2.0 * (total / 16.0) * (3.3 / 4095.0);
-  return voltage;
+  // Calculate voltage: average mV reading, compensate for 2:1 divider, convert to V
+  float Vbattf = 2 * Vbatt / 16 / 1000.0;
+  return Vbattf;
 }
 
 void loop() {
