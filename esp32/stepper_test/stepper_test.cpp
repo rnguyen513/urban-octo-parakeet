@@ -1,33 +1,42 @@
 /*
  * Stepper Motor Test for DRV8833 Driver
  *
- * === WIRING INSTRUCTIONS (DRV8833 + ESP32-C6) ===
+ * === WIRING INSTRUCTIONS (12-pin DRV8833 Board + ESP32-C6) ===
  *
- * 1. DRV8833 Logic Power:
- * - VCC   -> ESP32 3.3V
- * - GND   -> ESP32 GND
+ * Your DRV8833 board has 12 pins:
+ * in1, in2, in3, in4 (inputs), gnd, vcc, eep, out1, out2, out3, out4 (outputs), ult
  *
- * 2. Control Pins (4-wire control for bipolar stepper):
- * - AIN1  -> ESP32 GPIO 2
- * - AIN2  -> ESP32 GPIO 3
- * - BIN1  -> ESP32 GPIO 4
- * - BIN2  -> ESP32 GPIO 5
+ * 1. Ground (CRITICAL - Connect First!):
+ * - gnd   -> ESP32 GND AND Power Supply GND (common ground required!)
  *
- * 3. Optional Control Pins:
- * - SLP   -> ESP32 3.3V (or GPIO pin for sleep control)
- *           * Connect to 3.3V to keep driver awake
- *           * Pull LOW to put driver in sleep mode (saves power)
+ * 2. Motor Power:
+ * - vcc   -> External Power Supply (+) (3V - 10V for motor power)
+ *           * This powers the H-bridges for the motor
+ *           * Board has onboard regulator for logic power
+ *           * DO NOT connect ESP32 3.3V here!
  *
- * 4. Motor Power (CRITICAL - READ CAREFULLY):
- * - VM    -> External Power Supply (+) (2.7V - 10.8V max!)
- * - GND   -> External Power Supply (-) AND ESP32 GND (common ground!)
+ * 3. Control Pins (4-wire control for bipolar stepper):
+ * - in1   -> ESP32 D1 (GPIO 2)  [Controls H-Bridge 1, out1/out2 - Coil A]
+ * - in2   -> ESP32 D2 (GPIO 3)  [Controls H-Bridge 1, out1/out2 - Coil A]
+ * - in3   -> ESP32 D3 (GPIO 4)  [Controls H-Bridge 2, out3/out4 - Coil B]
+ * - in4   -> ESP32 D4 (GPIO 5)  [Controls H-Bridge 2, out3/out4 - Coil B]
+ *
+ * 4. Sleep Mode Control:
+ * - ult   -> ESP32 3.3V (to keep driver awake)
+ *           * Pull HIGH (3.3V) for normal operation
+ *           * Pull LOW for ultra-low power sleep mode
+ *           * Can connect to GPIO pin for software sleep control
+ *
+ * 5. Enable Pin (if present on your board):
+ * - eep   -> Leave unconnected or connect to 3.3V
+ *           * Function depends on your specific board variant
  *
  * === SAFETY PRECAUTIONS ===
  *
- * VOLTAGE LIMITS:
- * - ABSOLUTE MAX: 10.8V on VM pin
+ * VOLTAGE LIMITS (on vcc pin):
+ * - ABSOLUTE MAX: 10V (some boards may support up to 10.8V, check datasheet)
  * - RECOMMENDED: 5V-9V for most small steppers
- * - NEVER exceed 10.8V or you WILL destroy the chip!
+ * - NEVER exceed max voltage or you WILL destroy the driver!
  *
  * CURRENT LIMITS:
  * - Max continuous: 1.5A per motor channel
@@ -36,10 +45,10 @@
  * - If motor draws >1.5A, you NEED a different driver (like A4988 or DRV8825)
  *
  * CAPACITOR (REQUIRED):
- * - Place 100uF electrolytic capacitor across VM and GND
- * - Place as close as possible to DRV8833 VM/GND pins
+ * - Place 100uF electrolytic capacitor across vcc and gnd on DRV8833
+ * - Place as close as possible to the driver board
  * - This prevents voltage spikes that can destroy the driver
- * - Observe polarity: (-) to GND, (+) to VM
+ * - Observe polarity: (-) to gnd, (+) to vcc
  *
  * COMMON GROUND:
  * - ESP32 GND and Power Supply GND MUST be connected
@@ -55,15 +64,33 @@
  * - Consider a small heatsink if running >500mA continuously
  * - Allow airflow around the driver board
  *
- * 5. Motor Connections (Bipolar Stepper):
- * - AOUT1 & AOUT2 -> Coil A (e.g., Red & Green wires)
- * - BOUT1 & BOUT2 -> Coil B (e.g., Blue & Yellow wires)
+ * 6. Motor Connections (Bipolar Stepper):
+ * - out1 & out2 -> Coil A (H-Bridge 1 outputs)
+ * - out3 & out4 -> Coil B (H-Bridge 2 outputs)
  *
  * How to identify coils with multimeter:
  * 1. Measure resistance between all wire pairs
- * 2. Coil A: Two wires with ~few ohms resistance
- * 3. Coil B: The other two wires with ~few ohms resistance
+ * 2. Coil A: Two wires with ~few ohms resistance (e.g., Red & Green)
+ * 3. Coil B: The other two wires with ~few ohms resistance (e.g., Blue & Yellow)
  * 4. Between coils: Infinite/very high resistance
+ *
+ * === COMPLETE WIRING SUMMARY ===
+ *
+ * ESP32 Connections:
+ * - D1 (GPIO2) -> in1
+ * - D2 (GPIO3) -> in2
+ * - D3 (GPIO4) -> in3
+ * - D4 (GPIO5) -> in4
+ * - 3.3V       -> ult (keep awake)
+ * - GND        -> gnd (common ground)
+ *
+ * Power Supply Connections (3-10V):
+ * - (+) -> vcc
+ * - (-) -> gnd (shares ground with ESP32)
+ *
+ * Stepper Motor Connections:
+ * - Coil A -> out1 & out2
+ * - Coil B -> out3 & out4
  *
  * === DRV8833 vs A4988 Differences ===
  *
@@ -90,10 +117,11 @@
 #include <Arduino.h>
 
 // Define pin connections for DRV8833
-constexpr int AIN1_PIN = 2;  // Control H-Bridge A, Input 1
-constexpr int AIN2_PIN = 3;  // Control H-Bridge A, Input 2
-constexpr int BIN1_PIN = 4;  // Control H-Bridge B, Input 1
-constexpr int BIN2_PIN = 5;  // Control H-Bridge B, Input 2
+// Using XIAO ESP32C6 D-pin notation (D1=GPIO2, D2=GPIO3, D3=GPIO4, D4=GPIO5)
+constexpr int AIN1_PIN = D1;  // -> in1 on DRV8833 (controls out1)
+constexpr int AIN2_PIN = D2;  // -> in2 on DRV8833 (controls out2)
+constexpr int BIN1_PIN = D3;  // -> in3 on DRV8833 (controls out3)
+constexpr int BIN2_PIN = D4;  // -> in4 on DRV8833 (controls out4)
 
 // Motor settings
 constexpr int STEPS_PER_REVOLUTION = 200;  // For 1.8° stepper motors
@@ -162,18 +190,18 @@ void loop() {
 
   for (int i = 0; i < STEPS_PER_REVOLUTION; i++) {
     stepMotor(1);  // 1 = clockwise
-    delayMicroseconds(2000);  // 2ms between steps = ~2 seconds per revolution
+    delayMicroseconds(4000);  // 4ms between steps = ~4 seconds per revolution
   }
 
   Serial.println("    Completed 1 revolution CW");
   delay(1000);  // Pause between direction changes
 
-  // Counter-clockwise rotation - fast speed
-  Serial.println(">>> Spinning COUNTER-CLOCKWISE (fast)...");
+  // Counter-clockwise rotation - medium speed
+  Serial.println(">>> Spinning COUNTER-CLOCKWISE (medium)...");
 
   for (int i = 0; i < STEPS_PER_REVOLUTION; i++) {
     stepMotor(-1);  // -1 = counter-clockwise
-    delayMicroseconds(1000);  // 1ms between steps = ~1 second per revolution
+    delayMicroseconds(2000);  // 2ms between steps = ~2 seconds per revolution
   }
 
   Serial.println("    Completed 1 revolution CCW");
